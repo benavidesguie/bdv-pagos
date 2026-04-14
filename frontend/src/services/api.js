@@ -20,31 +20,4 @@ export const confirmarPago = async (data) => {
   return response.data
 }
 
-export const BDV_API_CONFIG = {
-  url: 'https://bdvconciliacion.banvenez.com:443/getMovement',
-  headers: {
-    'X-API-Key': '600C705C85E1E28738F074174BA24E1F',
-    'Content-Type': 'application/json',
-  }
-}
-
-export const validarPagoBDV = async (datosPago) => {
-  const payload = {
-    cedulaPagador: datosPago.cedulaPagador,
-    telefonoPagador: datosPago.telefonoPagador,
-    telefonoDestino: datosPago.telefonoDestino,
-    referencia: datosPago.referencia,
-    fechaPago: datosPago.fechaPago,
-    importe: datosPago.importe,
-    bancoOrigen: datosPago.bancoOrigen,
-  }
-
-  const response = await axios.post(BDV_API_CONFIG.url, payload, {
-    headers: BDV_API_CONFIG.headers,
-    timeout: 30000,
-  })
-
-  return response.data
-}
-
 export default api

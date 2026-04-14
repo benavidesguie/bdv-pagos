@@ -1,0 +1,219 @@
+{
+  "name": "Webhook Conciliación BDV",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "webhook-conciliacion",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [-400, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  op.id as orden_pago_uuid,\n  op.order_id,\n  op.monto,\n  op.monto_bs,\n  o.status as order_status,\n  o.customer_id,\n  c.phone as customer_phone,\n  c.name as customer_name\nFROM marketplace.ordenes_pago op\nJOIN marketplace.orders o ON op.order_id = o.id\nJOIN marketplace.customers c ON o.customer_id = c.id\nWHERE op.id = '{{ $json.orden_pago_uuid }}'"
+      },
+      "id": "get-orden-pago",
+      "name": "Get Orden Pago",
+      "type": "n8n-nodes-base.postgres",
+      "position": [-200, 300],
+      "credentials": {
+        "postgres": {
+          "id": "c2VTi6tZW3CQZBTg",
+          "name": "Postgres whatsapp-venta"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  product_name,\n  quantity,\n  unit_price,\n  total_bs\nFROM marketplace.order_items\nWHERE order_id = {{ $json.order_id }}"
+      },
+      "id": "get-order-items",
+      "name": "Get Order Items",
+      "type": "n8n-nodes-base.postgres",
+      "position": [0, 300],
+      "credentials": {
+        "postgres": {
+          "id": "c2VTi6tZW3CQZBTg",
+          "name": "Postgres whatsapp-venta"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://bdvconciliacion.banvenez.com:443/getMovement",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Key",
+              "value": "600C705C85E1E28738F074174BA24E1F"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "jsonOutputSchema": "",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "cedulaPagador",
+              "value": "={{ $json.cedulaPagador }}"
+            },
+            {
+              "name": "telefonoPagador",
+              "value": "={{ $json.telefonoPagador }}"
+            },
+            {
+              "name": "telefonoDestino",
+              "value": "04243428436"
+            },
+            {
+              "name": "referencia",
+              "value": "={{ $json.referencia }}"
+            },
+            {
+              "name": "fechaPago",
+              "value": "={{ $json.fechaPago }}"
+            },
+            {
+              "name": "importe",
+              "value": "={{ $json.importe }}"
+            },
+            {
+              "name": "bancoOrigen",
+              "value": "={{ $json.bancoOrigen }}"
+            }
+          ]
+        }
+      },
+      "id": "validate-bdv",
+      "name": "Validate BDV Payment",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [200, 300],
+      "notes": "Valida el pago contra la API de BDV"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate receipt image using @napi-rs/canvas\nconst { createCanvas, GlobalFonts } = require('@napi-rs/canvas');\n\nconst ordenPago = $input.first().json;\nconst orderItems = $input.all();\n\n// Create canvas\nconst canvas = createCanvas(500, 600);\nconst ctx = canvas.getContext('2d');\n\n// Background\nctx.fillStyle = '#ffffff';\nctx.fillRect(0, 0, 500, 600);\n\n// Header\nctx.fillStyle = '#1e3c72';\nctx.fillRect(0, 0, 500, 80);\nctx.fillStyle = '#ffffff';\nctx.font = 'bold 24px Arial';\nctx.fillText('COMPROBANTE DE PAGO', 85, 50);\n\n// Order info\nctx.fillStyle = '#333333';\nctx.font = '16px Arial';\nctx.fillText('Orden #: ' + ordenPago.order_id, 30, 120);\nctx.fillText('Cliente: ' + (ordenPago.customer_name || 'Cliente'), 30, 145);\n\n// Line separator\nctx.strokeStyle = '#cccccc';\nctx.beginPath();\nctx.moveTo(30, 170);\nctx.lineTo(470, 170);\nctx.stroke();\n\n// Products\nlet y = 200;\nfor (const item of orderItems) {\n  const product = item.json;\n  ctx.fillStyle = '#333333';\n  ctx.font = 'bold 14px Arial';\n  ctx.fillText(product.product_name, 30, y);\n  \n  y += 22;\n  ctx.fillStyle = '#666666';\n  ctx.font = '14px Arial';\n  const lineTotal = parseFloat(product.total_bs).toFixed(2);\n  ctx.fillText(product.quantity + ' x ' + lineTotal + ' BS = ' + lineTotal + ' BS', 30, y);\n  \n  y += 30;\n}\n\n// Total\nctx.strokeStyle = '#cccccc';\nctx.beginPath();\nctx.moveTo(30, y);\nctx.lineTo(470, y);\nctx.stroke();\n\ny += 20;\nctx.fillStyle = '#1e3c72';\nctx.font = 'bold 20px Arial';\nctx.fillText('TOTAL: ' + parseFloat(ordenPago.monto_bs).toFixed(2) + ' BS', 30, y);\n\n// Status\nctx.fillStyle = '#28a745';\nctx.font = 'bold 18px Arial';\nctx.fillText('PAGADO', 195, y + 40);\n\n// Get base64 image\nconst imageBase64 = canvas.toDataURL('image/png').split(',')[1];\n\nreturn [{\n  json: {\n    orden_pago_uuid: ordenPago.orden_pago_uuid,\n    order_id: ordenPago.order_id,\n    customer_phone: ordenPago.customer_phone,\n    customer_name: ordenPago.customer_name,\n    monto_bs: ordenPago.monto_bs,\n    image_base64: imageBase64\n  }\n}];"
+      },
+      "id": "generate-image",
+      "name": "Generate Receipt Image",
+      "type": "n8n-nodes-base.code",
+      "position": [400, 300],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "resource": "messages",
+        "instanceName": "DANUBE",
+        "remoteJid": "={{ $json.customer_phone }}@s.whatsapp.net",
+        "messageText": "=✅ ¡Pago confirmado! Tu pedido #{{ $json.order_id }} está siendo preparado.🎉\n\nGracias por tu compra, {{ $json.customer_name }}!",
+        "options": {}
+      },
+      "id": "send-text-message",
+      "name": "Send Text Message",
+      "type": "n8n-nodes-evolution-api.evolutionApi",
+      "position": [600, 300],
+      "credentials": {
+        "evolutionApi": {
+          "id": "E99psqFn5CDu92sA",
+          "name": "Evolution account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE marketplace.ordenes_pago\nSET status = 'paid',\n    bdv_response = jsonb_build_object('confirmed_at', NOW(), 'code', 1000),\n    updated_at = NOW()\nWHERE id = '{{ $json.orden_pago_uuid }}'"
+      },
+      "id": "update-orden-pago",
+      "name": "Update Orden Pago",
+      "type": "n8n-nodes-base.postgres",
+      "position": [800, 300],
+      "credentials": {
+        "postgres": {
+          "id": "c2VTi6tZW3CQZBTg",
+          "name": "Postgres whatsapp-venta"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE marketplace.orders\nSET status = 'paid',\n    payment_reference = '{{ $json.orden_pago_uuid }}',\n    payment_date = NOW()\nWHERE id = {{ $json.order_id }}"
+      },
+      "id": "update-order",
+      "name": "Update Order Status",
+      "type": "n8n-nodes-base.postgres",
+      "position": [1000, 300],
+      "credentials": {
+        "postgres": {
+          "id": "c2VTi6tZW3CQZBTg",
+          "name": "Postgres whatsapp-venta"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": {
+          "respondWith": "json",
+          "responseBody": "{\"success\": true, \"code\": 1000, \"message\": \"Pago confirmado y notificación enviada\"}"
+        }
+      },
+      "id": "respond-webhook",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "position": [1200, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Check if BDV returned code 1000\nconst bdvResponse = $input.first().json;\n\nif (bdvResponse.code !== 1000) {\n  throw new Error('Payment validation failed: ' + (bdvResponse.message || 'Unknown error'));\n}\n\nreturn $input.all();"
+      },
+      "id": "check-bdv-response",
+      "name": "Check BDV Response",
+      "type": "n8n-nodes-base.code",
+      "position": [200, 450],
+      "typeVersion": 2
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [[{"node": "Get Orden Pago", "type": "main", "index": 0}]]
+    },
+    "Get Orden Pago": {
+      "main": [[{"node": "Get Order Items", "type": "main", "index": 0}]]
+    },
+    "Get Order Items": {
+      "main": [[{"node": "Validate BDV Payment", "type": "main", "index": 0}]]
+    },
+    "Validate BDV Payment": {
+      "main": [[{"node": "Check BDV Response", "type": "main", "index": 0}]]
+    },
+    "Check BDV Response": {
+      "main": [[{"node": "Generate Receipt Image", "type": "main", "index": 0}]]
+    },
+    "Generate Receipt Image": {
+      "main": [[{"node": "Send Text Message", "type": "main", "index": 0}]]
+    },
+    "Send Text Message": {
+      "main": [[{"node": "Update Orden Pago", "type": "main", "index": 0}]]
+    },
+    "Update Orden Pago": {
+      "main": [[{"node": "Update Order Status", "type": "main", "index": 0}]]
+    },
+    "Update Order Status": {
+      "main": [[{"node": "Respond to Webhook", "type": "main", "index": 0}]]
+    }
+  }
+}

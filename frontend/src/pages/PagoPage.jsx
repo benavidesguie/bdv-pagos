@@ -1,53 +1,50 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import OrderInfo from '../components/OrderInfo'
 import PaymentForm from '../components/PaymentForm'
-import { validarPagoBDV, confirmarPago } from '../services/api'
+import { confirmarPago } from '../services/api'
 
 function PagoPage({ ordenData, uuid }) {
   const [step, setStep] = useState('form') // 'form' | 'loading' | 'success' | 'error'
   const [errorMessage, setErrorMessage] = useState('')
   const [resultData, setResultData] = useState(null)
 
+  useEffect(() => {
+    if (step === 'success') {
+      const timer = setTimeout(() => {
+        window.close()
+      }, 4000)
+      return () => clearTimeout(timer)
+    }
+  }, [step])
+
   const handleSubmit = async (formData) => {
     setStep('loading')
     setErrorMessage('')
 
     try {
-      const bdvPayload = {
+      const response = await confirmarPago({
+        orden_pago_uuid: uuid,
         cedulaPagador: formData.cedulaPagador,
         telefonoPagador: formData.telefonoPagador,
-        telefonoDestino: ordenData.telefono_beneficiario,
         referencia: formData.referencia,
         fechaPago: formData.fechaPago,
         importe: ordenData.monto_usd.toString(),
         bancoOrigen: formData.bancoOrigen,
-      }
+      })
 
-      const bdvResponse = await validarPagoBDV(bdvPayload)
-
-      if (bdvResponse.code === 1000) {
-        await confirmarPago({
-          orden_pago_uuid: uuid,
-          cedulaPagador: formData.cedulaPagador,
-          telefonoPagador: formData.telefonoPagador,
-          referencia: formData.referencia,
-          fechaPago: formData.fechaPago,
-          importe: ordenData.monto_usd.toString(),
-          bancoOrigen: formData.bancoOrigen,
-        })
-
+      if (response.success && response.code === 1000) {
         setResultData({
           referencia: formData.referencia,
           monto: ordenData.monto_bs,
         })
         setStep('success')
       } else {
-        setErrorMessage(bdvResponse.message || 'El pago no fue validado por el banco')
+        setErrorMessage(response.message || 'El pago no fue validado')
         setStep('error')
       }
     } catch (error) {
       console.error('Error:', error)
-      setErrorMessage(error.response?.data?.message || error.message || 'Error al procesar el pago')
+      setErrorMessage(error.message || 'Error al procesar el pago')
       setStep('error')
     }
   }
@@ -70,7 +67,7 @@ function PagoPage({ ordenData, uuid }) {
         {step === 'loading' && (
           <div className="loading">
             <div className="spinner"></div>
-            <p>Validando pago con el banco...</p>
+            <p>Procesando pago...</p>
           </div>
         )}
 
@@ -90,17 +87,24 @@ function PagoPage({ ordenData, uuid }) {
             <div className="success-icon">✅</div>
             <h3>¡Pago Confirmado!</h3>
             <p>Tu pago ha sido procesado exitosamente.</p>
+            <p>Recibirás un mensaje de WhatsApp con los detalles de tu pedido.</p>
             <p style={{ marginTop: '12px' }}>
               <strong>Referencia:</strong> {resultData?.referencia}
             </p>
             <p>
               <strong>Monto:</strong> {resultData?.monto?.toFixed(2)} Bs
             </p>
+            <p style={{ marginTop: '20px', fontSize: '12px', color: '#666' }}>
+              Esta ventana se cerrará en 4 segundos...
+            </p>
           </div>
         )}
 
         {step === 'form' && (
-          <PaymentForm onSubmit={handleSubmit} />
+          <PaymentForm 
+            onSubmit={handleSubmit} 
+            telefonoInicial={ordenData.telefono_cliente} 
+          />
         )}
       </div>
     </div>

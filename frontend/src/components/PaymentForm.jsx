@@ -1,14 +1,38 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import BankSelect from './BankSelect'
 
-function PaymentForm({ onSubmit }) {
+function formatearTelefono(telefono) {
+  if (!telefono) return ''
+  // Si ya tiene 11 dígitos, no transformar
+  if (telefono.length === 11) {
+    return telefono
+  }
+  // Si tiene 12 dígitos: "58XXXXXXXXXX" → "04XXXXXXXXX"
+  if (telefono.length === 12) {
+    return "0" + telefono.slice(2)
+  }
+  // Otros casos: devolver como está
+  return telefono
+}
+
+function PaymentForm({ onSubmit, telefonoInicial = '' }) {
+  const telefonoFormateado = formatearTelefono(telefonoInicial)
+
   const [formData, setFormData] = useState({
-    cedulaPagador: '',
-    telefonoPagador: '',
+    cedulaTipo: 'V',
+    cedulaNumero: '',
+    telefonoPagador: telefonoFormateado,
     referencia: '',
     fechaPago: new Date().toISOString().split('T')[0],
     bancoOrigen: '',
   })
+
+  useEffect(() => {
+    setFormData(prev => ({
+      ...prev,
+      telefonoPagador: telefonoFormateado
+    }))
+  }, [telefonoInicial])
 
   const handleChange = (e) => {
     const { name, value } = e.target
@@ -20,22 +44,37 @@ function PaymentForm({ onSubmit }) {
 
   const handleSubmit = (e) => {
     e.preventDefault()
-    onSubmit(formData)
+    const cedulaCompleta = `${formData.cedulaTipo}-${formData.cedulaNumero}`
+    onSubmit({
+      ...formData,
+      cedulaPagador: cedulaCompleta
+    })
   }
 
   return (
     <form onSubmit={handleSubmit}>
       <div className="form-group">
-        <label htmlFor="cedulaPagador">Cédula del Pagador</label>
-        <input
-          type="text"
-          id="cedulaPagador"
-          name="cedulaPagador"
-          value={formData.cedulaPagador}
-          onChange={handleChange}
-          placeholder="V-12345678 ó J-12345678-9"
-          required
-        />
+        <label>Cédula del Pagador</label>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <select
+            name="cedulaTipo"
+            value={formData.cedulaTipo}
+            onChange={handleChange}
+            style={{ width: '70px' }}
+          >
+            <option value="V">V</option>
+            <option value="J">J</option>
+            <option value="E">E</option>
+          </select>
+          <input
+            type="text"
+            name="cedulaNumero"
+            value={formData.cedulaNumero}
+            onChange={handleChange}
+            placeholder={formData.cedulaTipo === 'J' ? "12345678-9" : "12345678"}
+            required
+          />
+        </div>
       </div>
 
       <div className="form-group">
